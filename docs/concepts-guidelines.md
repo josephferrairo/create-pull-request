@@ -9,6 +9,7 @@ This document covers terminology, how the action works, general usage guidelines
   - [Providing a consistent base](#providing-a-consistent-base)
   - [Pull request events](#pull-request-events)
   - [Restrictions on forked repositories](#restrictions-on-forked-repositories)
+  - [Triggering further workflow runs](#triggering-further-workflow-runs)
   - [Security](#security)
 - [Advanced usage](#advanced-usage)
   - [Creating pull requests in a remote repository](#creating-pull-requests-in-a-remote-repository)
@@ -113,6 +114,23 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
 ```
 
+### Triggering further workflow runs
+
+Pull requests created by the action using the default `GITHUB_TOKEN` cannot trigger other workflows. If you have `on: push` or `on: pull_request` workflows acting as checks on pull requests, they will not run.
+
+> When you use the repository's GITHUB_TOKEN to perform tasks on behalf of the GitHub Actions app, events triggered by the GITHUB_TOKEN will not create a new workflow run.
+
+[GitHub Actions: Events that trigger workflows](https://help.github.com/en/actions/reference/events-that-trigger-workflows#triggering-new-workflows-using-a-personal-access-token)
+
+#### Workarounds to trigger further workflow runs
+
+There are a number of workarounds with different pros and cons.
+
+1. Use the default `GITHUB_TOKEN` and allow the action to create pull requests that have no checks enabled. Manually close pull requests and immediately reopen them. This will enable `on: pull_request` workflow checks to run.
+2. Use a `repo` scoped [Personal Access Token (PAT)](https://help.github.com/en/github/authenticating-to-github/creating-a-personal-access-token-for-the-command-line) created on an account that has write access to the repository that pull requests are being created in. This is the standard workaround and [recommended by GitHub](https://help.github.com/en/actions/reference/events-that-trigger-workflows#triggering-new-workflows-using-a-personal-access-token). However, the PAT cannot be scoped to a specific repository so the token becomes a very sensitive secret.
+3. Use [SSH (deploy keys)](#push-using-ssh-deploy-keys) to push the pull request branch. This is arguably more secure than using a PAT because deploy keys can be set per repository. However, this method will only trigger `on: push` workflows.
+4. Use a [machine account that creates pull requests from its own fork](#push-pull-request-branches-to-a-fork). This is the most secure because the PAT created only has access to its own fork, not the main repository. Even though the PAT has no write access to the main repository, because the workflow is running in the main repository this method *will* trigger further workflow runs.
+
 ### Security
 
 From a security perspective it's good practice to fork third-party actions, review the code, and use your fork of the action in workflows.
@@ -194,15 +212,15 @@ It will use their own fork to push code and create the pull request.
       - uses: actions/checkout@v2
 
       - run: |
-          git config user.password ${{ secrets.PAT }}
-          git remote set-url origin https://github.com/bot-user/fork-project
+          git config user.password ${{ secrets.MACHINE_USER_PAT }}
+          git remote set-url origin https://github.com/machine-user/fork-of-repository
           git fetch --unshallow -p origin
 
       # Make changes to pull request here
 
       - uses: peter-evans/create-pull-request@v2
         with:
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.MACHINE_USER_PAT }}
           request-on-parent: true
 ```
 
